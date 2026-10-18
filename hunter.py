@@ -41,7 +41,7 @@ def set_result(value):
 
 
 def need(name):
-    value = (os.getenv(name) or "").strip()
+    value = (os.getenv(name) or "").strip().strip("\"'").strip()
     if not value:
         log(f"FOUT: omgevingsvariabele/secret {name} ontbreekt of is leeg.")
         sys.exit(1)
@@ -90,6 +90,17 @@ def main():
     compartment_id = need("COMPARTMENT_ID")
     subnet_id = need("SUBNET_ID")
     ssh_key = need("SSH_PUBLIC_KEY")
+
+    # Snelle controle van de OCID's (zonder API-aanroep, zonder iets te loggen)
+    sub_parts = subnet_id.split(".")
+    if not subnet_id.startswith("ocid1.subnet."):
+        kind = sub_parts[1] if len(sub_parts) > 1 else "onbekend"
+        fatal(f"SUBNET_ID moet met 'ocid1.subnet.' beginnen, maar is een '{kind}'-OCID "
+              "(bijv. een VCN-OCID of een quote/spatie te veel in de secret).")
+    if len(sub_parts) > 3 and sub_parts[3] not in ("", "eu-amsterdam-1"):
+        fatal(f"SUBNET_ID hoort bij regio '{sub_parts[3]}', niet bij eu-amsterdam-1.")
+    if not compartment_id.startswith(("ocid1.compartment.", "ocid1.tenancy.")):
+        fatal("COMPARTMENT_ID moet met 'ocid1.compartment.' (of 'ocid1.tenancy.' voor root) beginnen.")
 
     try:
         config = oci.config.from_file()  # ~/.oci/config, profiel DEFAULT
