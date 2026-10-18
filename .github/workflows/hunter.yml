@@ -76,3 +76,9 @@ jobs:
               except Exception as e:
                   print(f"Poging in {ad.name}: {e}")
           EOF
+        
+      - name: Voeg duidelijke status toe aan GitHub Summary
+        if: always()
+        run: |
+          echo "### 🔍 Oracle Hunter Status" >> $GITHUB_STEP_SUMMARY
+          echo "De poging is uitgevoerd op $(date). Controleer hierboven of er een SUCCESS-melding tussen staat!" >> $GITHUB_STEP_SUMMARY
