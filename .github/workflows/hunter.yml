@@ -2,12 +2,23 @@ name: Oracle ARM Hunter
 
 on:
   schedule:
-    - cron: '*/5 * * * *' # Draait elke 5 minuten automatisch
-  workflow_dispatch: # Maakt handmatig starten via de knop mogelijk
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write   # voor de "server is live"-melding
+  actions: write  # om de workflow na succes uit te schakelen
+
+# Nooit twee runs tegelijk (voorkomt dubbele servers en rate limits)
+concurrency:
+  group: oracle-hunter
+  cancel-in-progress: false
 
 jobs:
   hunt:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -15,27 +26,48 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
 
-      - name: Install OCI CLI
-        run: |
-          pip install oci
+      - name: Install OCI SDK
+        run: pip install --quiet oci
 
-      - name: Configure OCI Environment
+      - name: Configure OCI environment
         env:
           OCI_CONFIG: ${{ secrets.OCI_CONFIG }}
           OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.oci
-          echo "$OCI_CONFIG" > ~/.oci/config
-          echo "$OCI_PRIVATE_KEY" > ~/.oci/oci_api_key.pem
-          chmod 600 ~/.oci/oci_api_key.pem
+          chmod 700 ~/.oci
+          printf '%s\n' "$OCI_CONFIG" > ~/.oci/config
+          printf '%s\n' "$OCI_PRIVATE_KEY" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/config ~/.oci/oci_api_key.pem
 
-      - name: Run Hunter Script
+      - name: Run hunter
+        id: hunt
         env:
           COMPARTMENT_ID: ${{ secrets.COMPARTMENT_ID }}
           SUBNET_ID: ${{ secrets.SUBNET_ID }}
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: python3 hunter.py
+
+      - name: Summary
+        if: always()
         run: |
-          python3 -  $GITHUB_STEP_SUMMARY
-          echo "De poging is uitgevoerd op $(date). Controleer hierboven of er een SUCCESS-melding tussen staat!" >> $GITHUB_STEP_SUMMARY
+          echo "Run op $(date -u '+%Y-%m-%d %H:%M UTC') - resultaat: ${{ steps.hunt.outputs.result || 'fout/onbekend' }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify (issue + e-mail)
+        if: steps.hunt.outputs.result == 'created'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Oracle ARM server is live" \
+            --body "De A1-instantie is aangemaakt. Zie de OCI-console voor het publieke IP. De hunter-workflow is automatisch uitgeschakeld." \
+            --assignee "$GITHUB_REPOSITORY_OWNER"
+
+      - name: Disable workflow after success
+        if: steps.hunt.outputs.result == 'created' || steps.hunt.outputs.result == 'exists'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow disable hunter.yml --repo "$GITHUB_REPOSITORY"
