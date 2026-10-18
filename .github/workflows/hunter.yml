@@ -2,7 +2,7 @@ name: Oracle ARM Hunter
 
 on:
   schedule:
-    - cron: '*/5 * * * *' # Draait elke 5 minuten automatisch
+    - cron: '*/15 * * * *' # Om de 15 minuten is stabieler voor GitHub Actions cronjobs
   workflow_dispatch: # Maakt handmatig starten via de knop mogelijk
 
 jobs:
