@@ -1,0 +1,60 @@
+name: Oracle ARM Hunter
+
+on:
+  schedule:
+    - cron: '*/10 * * * *' # Draait elke 15 minuten automatisch
+  workflow_dispatch:
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install oci
+
+      - name: Setup OCI Credentials
+        run: |
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_CONFIG }}" > ~/.oci/config
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+
+      - name: Run OCI Catcher Script
+        env:
+          COMPARTMENT_ID: ${{ secrets.COMPARTMENT_ID }}
+          SUBNET_ID: ${{ secrets.SUBNET_ID }}
+          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: |
+          python3 - << 'EOF'
+          import oci, os
+          config = oci.config.from_file("~/.oci/config", "DEFAULT")
+          compute = oci.core.ComputeClient(config)
+          identity = oci.identity.IdentityClient(config)
+          ads = identity.list_availability_domains(config["tenancy"]).data
+          
+          for ad in ads:
+              try:
+                  details = oci.core.models.LaunchInstanceDetails(
+                      compartment_id=os.environ["COMPARTMENT_ID"],
+                      display_name="selenium-bot-server",
+                      shape="VM.Standard.A1.Flex",
+                      availability_domain=ad.name,
+                      image_id="ocid1.image.oc1.eu-amsterdam-1.aaaaaaaaw...", # Pas aan per regio
+                      subnet_id=os.environ["SUBNET_ID"],
+                      shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(ocpus=4, memory_in_gbs=24),
+                      metadata={"ssh_authorized_keys": os.environ["SSH_PUBLIC_KEY"]}
+                  )
+                  compute.launch_instance(details)
+                  print(f"SUCCESS: Server aangemaakt in {ad.name}!")
+                  break
+              except Exception as e:
+                  print(f"Poging in {ad.name}: {e}")
+          EOF
