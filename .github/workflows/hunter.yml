@@ -37,48 +37,5 @@ jobs:
           SUBNET_ID: ${{ secrets.SUBNET_ID }}
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
         run: |
-          python3 - << 'EOF'
-          import oci, os
-          
-          config = oci.config.from_file("~/.oci/config", "DEFAULT")
-          compute = oci.core.ComputeClient(config)
-          identity = oci.identity.IdentityClient(config)
-          
-          # Amsterdam Availability Domains ophalen
-          ads = identity.list_availability_domains(config["tenancy"]).data
-          
-          # Ubuntu 22.04 / 24.04 aarch64 (ARM) image OCID voor eu-amsterdam-1
-          image_id = "ocid1.image.oc1.eu-amsterdam-1.aaaaaaaaw...vigeer_hier_jouw_juiste_image_ocid..."
-          
-          for ad in ads:
-              try:
-                  details = oci.core.models.LaunchInstanceDetails(
-                      compartment_id=os.environ["COMPARTMENT_ID"],
-                      display_name="selenium-bot-server",
-                      shape="VM.Standard.A1.Flex",
-                      availability_domain=ad.name,
-                      image_id="ocid1.image.oc1.eu-amsterdam-1.aaaaaaaav5x75pzb5z57qg36fdw2r3o5h7j6w4v3b2n1m0k9l8j7h6g5f4d3", # Vervang door een geverifieerd Amsterdam ARM image OCID indien nodig
-                      subnet_id=os.environ["SUBNET_ID"],
-                      shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(ocpus=4, memory_in_gbs=24),
-                      metadata={"ssh_authorized_keys": os.environ["SSH_PUBLIC_KEY"]},
-                      source_details=oci.core.models.InstanceSourceViaImageDetails(
-                          source_type="image",
-                          image_id="ocid1.image.oc1.eu-amsterdam-1.aaaaaaaasv4a5pzb5z57qg36fdw2r3o5h7j6w4v3b2n1m0k9l8j7h6g5f4d3",
-                          boot_volume_size_in_gbs=50
-                      )
-                  )
-                  # Alternatieve eenvoudige call voor boot volume toewijzing indien nodig:
-                  details.boot_volume_size_in_gbs = 50
-
-                  compute.launch_instance(details)
-                  print(f"SUCCESS: Server succesvol aangemaakt in {ad.name}!")
-                  break
-              except Exception as e:
-                  print(f"Poging in {ad.name}: {e}")
-          EOF
-        
-      - name: Voeg duidelijke status toe aan GitHub Summary
-        if: always()
-        run: |
-          echo "### 🔍 Oracle Hunter Status" >> $GITHUB_STEP_SUMMARY
+          python3 -  $GITHUB_STEP_SUMMARY
           echo "De poging is uitgevoerd op $(date). Controleer hierboven of er een SUCCESS-melding tussen staat!" >> $GITHUB_STEP_SUMMARY
