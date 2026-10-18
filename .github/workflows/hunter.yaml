@@ -71,4 +71,14 @@ jobs:
         if: steps.hunt.outputs.result == 'created' || steps.hunt.outputs.result == 'exists'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow disable hunter.yml --repo "$GITHUB_REPOSITORY"
+        run: gh workflow disable "Oracle ARM Hunter" --repo "$GITHUB_REPOSITORY"
+
+      # Cron van GitHub is onbetrouwbaar; start daarom zelf de volgende run.
+      # (workflow_dispatch via GITHUB_TOKEN mag wel nieuwe runs starten.)
+      # Alleen bij "geen capaciteit": bij succes of een echte fout stopt de keten.
+      - name: Start next run
+        if: steps.hunt.outputs.result == 'capacity'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run "Oracle ARM Hunter" --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}"
