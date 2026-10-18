@@ -104,13 +104,36 @@ def main():
     network = oci.core.VirtualNetworkClient(config)
 
     # --- Preflight: auth, AD's, subnet, image, bestaande instantie ---------
-    try:
-        ads = identity.list_availability_domains(config["tenancy"]).data
-        subnet = network.get_subnet(subnet_id).data
-        existing = find_existing(compute, compartment_id)
-        image = None if existing else pick_image(compute, compartment_id)
-    except oci.exceptions.ServiceError as exc:
-        fatal(f"Preflight mislukt: HTTP {exc.status} {exc.code}: {exc.message}")
+    hints = {
+        "1/4 availability domains (tenancy uit OCI_CONFIG)":
+            "Controleer 'tenancy' en 'user' in OCI_CONFIG, de fingerprint en of de API-key bij die user hoort.",
+        "2/4 subnet (SUBNET_ID)":
+            "SUBNET_ID is onjuist, zit in een andere regio, of de user mag het subnet niet lezen.",
+        "3/4 instanties lijsten (COMPARTMENT_ID)":
+            "COMPARTMENT_ID is onjuist, of de user heeft geen 'inspect/read instances' rechten in dit compartment.",
+        "4/4 image zoeken (COMPARTMENT_ID)":
+            "De user heeft geen rechten om images te lezen in dit compartment.",
+    }
+
+    def step(label, fn):
+        try:
+            return fn()
+        except oci.exceptions.ServiceError as exc:
+            log(f"Stap {label} mislukt: HTTP {exc.status} {exc.code}")
+            log(f"Tip: {hints[label]}")
+            log(f"opc-request-id: {exc.request_id}")
+            sys.exit(1)
+
+    ads = step("1/4 availability domains (tenancy uit OCI_CONFIG)",
+               lambda: identity.list_availability_domains(config["tenancy"]).data)
+    log("Stap 1/4 OK: authenticatie werkt.")
+    subnet = step("2/4 subnet (SUBNET_ID)", lambda: network.get_subnet(subnet_id).data)
+    log("Stap 2/4 OK: subnet gevonden.")
+    existing = step("3/4 instanties lijsten (COMPARTMENT_ID)",
+                    lambda: find_existing(compute, compartment_id))
+    log("Stap 3/4 OK: compartment leesbaar.")
+    image = None if existing else step("4/4 image zoeken (COMPARTMENT_ID)",
+                                       lambda: pick_image(compute, compartment_id))
 
     if existing:
         log(f"Er bestaat al een {SHAPE}-instantie (status {existing.lifecycle_state}). Niets te doen.")
