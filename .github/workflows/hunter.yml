@@ -2,7 +2,8 @@ name: Oracle ARM Hunter
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    # Rustige minuten kiezen: :00 en :15/:30/:45 zijn drukke momenten bij GitHub
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
 permissions:

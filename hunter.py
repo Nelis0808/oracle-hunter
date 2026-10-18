@@ -25,8 +25,10 @@ BOOT_GB = int(os.getenv("BOOT_VOLUME_GB", "100"))  # minimum 50, free tier totaa
 DISPLAY_NAME = os.getenv("INSTANCE_NAME", "arm-free")
 IMAGE_OS = os.getenv("IMAGE_OS", "Canonical Ubuntu")
 IMAGE_OS_VERSION = os.getenv("IMAGE_OS_VERSION", "24.04")
-ATTEMPTS = int(os.getenv("ATTEMPTS", "10"))
-SLEEP_SECONDS = int(os.getenv("SLEEP_SECONDS", "75"))
+ATTEMPTS = int(os.getenv("ATTEMPTS", "5"))
+SLEEP_SECONDS = int(os.getenv("SLEEP_SECONDS", "120"))  # onder ~60s geeft OCI vaak 429
+MAX_RUNTIME = int(os.getenv("MAX_RUNTIME_SECONDS", "720"))  # run eindigt altijd netjes < timeout
+START = time.monotonic()
 
 
 def log(msg):
@@ -167,6 +169,10 @@ def main():
     log(f"ADs: {len(ads)} | publiek IP: {assign_public_ip} | {OCPUS:g} OCPU / {MEMORY_GB:g} GB / {BOOT_GB} GB boot")
 
     for attempt in range(1, ATTEMPTS + 1):
+        if time.monotonic() - START > MAX_RUNTIME:
+            log("Maximale looptijd van deze run bereikt; stop netjes.")
+            break
+        pause = SLEEP_SECONDS
         for ad in ads:
             details = oci.core.models.LaunchInstanceDetails(
                 availability_domain=ad.name,
@@ -189,8 +195,8 @@ def main():
             except oci.exceptions.ServiceError as exc:
                 text = f"{exc.code} {exc.message}".lower()
                 if exc.status == 429:
-                    log("Rate limit (429). Extra wachten.")
-                    time.sleep(SLEEP_SECONDS * 2)
+                    log(f"Poging {attempt}/{ATTEMPTS}: rate limit (429), volgende poging wacht langer.")
+                    pause = SLEEP_SECONDS * 2
                 elif exc.status >= 500 or "capacity" in text:
                     log(f"Poging {attempt}/{ATTEMPTS}: geen capaciteit (HTTP {exc.status}).")
                 else:
@@ -215,7 +221,8 @@ def main():
             return
 
         if attempt < ATTEMPTS:
-            time.sleep(SLEEP_SECONDS)
+            remaining = MAX_RUNTIME - (time.monotonic() - START)
+            time.sleep(max(0, min(pause, remaining)))
 
     log("Geen capaciteit gevonden in deze run. Volgende cron-run probeert opnieuw.")
     set_result("capacity")
