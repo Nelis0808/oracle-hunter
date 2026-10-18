@@ -91,6 +91,17 @@ def main():
     subnet_id = need("SUBNET_ID")
     ssh_key = need("SSH_PUBLIC_KEY")
 
+    # SSH-sleutel moet één regel publieke sleutel zijn (nooit de inhoud loggen)
+    if "PRIVATE KEY" in ssh_key or ssh_key.startswith("-----"):
+        fatal("SSH_PUBLIC_KEY bevat een PRIVÉsleutel (begint met '-----BEGIN'). "
+              "Zet hier de PUBLIEKE sleutel (.pub, één regel die met 'ssh-ed25519' of 'ssh-rsa' begint). "
+              "Beschouw de sleutel die in die secret stond als gelekt en vervang hem.")
+    if not ssh_key.startswith(("ssh-rsa ", "ssh-ed25519 ", "ecdsa-sha2-", "sk-ssh-ed25519", "sk-ecdsa-")):
+        fatal("SSH_PUBLIC_KEY heeft geen geldig formaat; verwacht een regel die met "
+              "'ssh-ed25519' of 'ssh-rsa' begint.")
+    if "\n" in ssh_key:
+        fatal("SSH_PUBLIC_KEY moet één regel zijn (geen regelafbrekingen).")
+
     # Snelle controle van de OCID's (zonder API-aanroep, zonder iets te loggen)
     sub_parts = subnet_id.split(".")
     if not subnet_id.startswith("ocid1.subnet."):
