@@ -2,7 +2,7 @@ name: Oracle ARM Hunter
 
 on:
   schedule:
-    - cron: '*/15 * * * *' # Draait elke 15 minuten automatisch
+    - cron: '*/5 * * * *' # Draait elke 5 minuten automatisch
   workflow_dispatch: # Maakt handmatig starten via de knop mogelijk
 
 jobs:
@@ -37,5 +37,44 @@ jobs:
           SUBNET_ID: ${{ secrets.SUBNET_ID }}
           SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
         run: |
-          python3 -  $GITHUB_STEP_SUMMARY
-          echo "De poging is uitgevoerd op $(date). Controleer hierboven of er een SUCCESS-melding tussen staat!" >> $GITHUB_STEP_SUMMARY
+          python3 - << 'EOF'
+          import oci, os
+          
+          config = oci.config.from_file("~/.oci/config", "DEFAULT")
+          compute = oci.core.ComputeClient(config)
+          identity = oci.identity.IdentityClient(config)
+          
+          ads = identity.list_availability_domains(config["tenancy"]).data
+          
+          # Vervang hieronder jouw echte image OCID voor Amsterdam
+          image_id = "ocid1.image.oc1.eu-amsterdam-1.aaaaaaaaw...jouw_echte_image_ocid..."
+          
+          for ad in ads:
+              try:
+                  details = oci.core.models.LaunchInstanceDetails(
+                      compartment_id=os.environ["COMPARTMENT_ID"],
+                      display_name="selenium-bot-server",
+                      shape="VM.Standard.A1.Flex",
+                      availability_domain=ad.name,
+                      image_id=image_id,
+                      subnet_id=os.environ["SUBNET_ID"],
+                      shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(ocpus=4, memory_in_gbs=24),
+                      metadata={"ssh_authorized_keys": os.environ["SSH_PUBLIC_KEY"]},
+                      source_details=oci.core.models.InstanceSourceViaImageDetails(
+                          source_type="image",
+                          image_id=image_id,
+                          boot_volume_size_in_gbs=50
+                      )
+                  )
+                  compute.launch_instance(details)
+                  print(f"SUCCESS: Server succesvol aangemaakt in {ad.name}!")
+                  break
+              except Exception as e:
+                  print(f"Poging in {ad.name}: {e}")
+          EOF
+
+      - name: Voeg duidelijke status toe aan GitHub Summary
+        if: always()
+        run: |
+          echo "### 🔍 Oracle Hunter Status" >> $GITHUB_STEP_SUMMARY"
+          echo "De poging is uitgevoerd op $(date). Controleer de logboeken hierboven of er een SUCCESS-melding tussen staat!" >> $GITHUB_STEP_SUMMARY
